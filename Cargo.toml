@@ -1,6 +1,6 @@
 [package]
 name = "usiem-basic-parser"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Samuel Garcés <samuel.garces@protonmail.com>"]
 license = "MIT"
 description = "uSIEM parser component that allows using multiple and different parsers"

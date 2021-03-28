@@ -161,6 +161,15 @@ impl SiemComponent for BasicParserComponent {
                     TryRecvError::Disconnected => return,
                 },
             }
+            loop {
+                let log = self.cache.pop();
+                match log {
+                    Some(log) => {
+                        self.parse_log(log);
+                    },
+                    None => {break;}
+                }
+            }
         }
     }
 
