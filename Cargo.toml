@@ -1,0 +1,20 @@
+[package]
+name = "usiem-basic-parser"
+version = "0.0.1"
+authors = ["Samuel Garcés <samuel.garces@protonmail.com>"]
+license = "MIT"
+description = "uSIEM parser component that allows using multiple and different parsers"
+repository = "https://github.com/u-siem/usiem-basic-parser"
+keywords = ["SIEM", "security", "logs","parser"]
+categories = ["parsing"]
+edition = "2018"
+
+[lib]
+name = "usiem_basic_parser"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+u-siem = {version = "0.0"}
+crossbeam-channel = { version = "0.5" }
