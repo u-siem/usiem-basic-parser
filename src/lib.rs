@@ -1,14 +1,17 @@
 use crossbeam_channel::TryRecvError;
 use crossbeam_channel::{Receiver, Sender};
+use serde_json::json;
 use std::borrow::Cow;
 use usiem::components::common::{
     CommandDefinition, SiemComponentCapabilities, SiemComponentStateStorage, SiemFunctionCall,
     SiemFunctionResponse, SiemFunctionType, SiemMessage, UserRole,
 };
 use usiem::components::common::{LogParser, LogParsingError};
+use usiem::components::dataset::SiemDataset;
 use usiem::components::SiemComponent;
 use usiem::events::SiemLog;
 
+#[derive(Clone)]
 pub struct BasicParserComponent {
     /// Send actions to the kernel
     kernel_sender: Sender<SiemMessage>,
@@ -24,6 +27,7 @@ pub struct BasicParserComponent {
     cache: Vec<SiemLog>,
     kernel_errors: usize,
     send_errors: usize,
+    id: u64,
 }
 
 impl BasicParserComponent {
@@ -42,27 +46,33 @@ impl BasicParserComponent {
             cache: Vec::with_capacity(128),
             kernel_errors: 0,
             send_errors: 0,
+            id: 0,
         };
     }
     pub fn add_parser(&mut self, parser: Box<dyn LogParser>) {
         self.parsers.push(parser);
     }
-    fn list_parsers(&self) -> SiemMessage {
+    fn list_parsers(&self, id: u64) -> SiemMessage {
         let mut content = String::with_capacity(4096);
         content.push_str("[");
-        if self.parsers.len() > 0{
+        if self.parsers.len() > 0 {
             content.push_str("\"");
         }
-        let content2 = self.parsers.iter().map(|x| x.name()).collect::<Vec<&str>>().join("\",\"");
+        let content2 = self
+            .parsers
+            .iter()
+            .map(|x| x.name())
+            .collect::<Vec<&str>>()
+            .join("\",\"");
         content.push_str(&content2);
-        if self.parsers.len() > 0{
+        if self.parsers.len() > 0 {
             content.push_str("\"");
         }
         content.push_str("]");
-        SiemMessage::Response(SiemFunctionResponse::OTHER(
-            Cow::Borrowed("LIST_PARSERS"),
-            Ok(Cow::Owned(content)),
-        ))
+        SiemMessage::Response(
+            id,
+            SiemFunctionResponse::OTHER(Cow::Borrowed("LIST_PARSERS"), Ok(json!(content))),
+        )
     }
     fn parse_log(&mut self, log: SiemLog) {
         let mut selected_parser = None;
@@ -78,11 +88,10 @@ impl BasicParserComponent {
                 Err(e) => match e {
                     LogParsingError::NoValidParser(lg) => self.log_sender.send(lg),
                     LogParsingError::ParserError(lg) => {
-                        let r = self
-                            .kernel_sender
-                            .send(SiemMessage::Notification(Cow::Borrowed(
-                                "Error parsing log...",
-                            )));
+                        let r = self.kernel_sender.send(SiemMessage::Notification(
+                            self.id,
+                            Cow::Borrowed("Error parsing log..."),
+                        ));
                         match r {
                             Err(_e) => {
                                 self.kernel_errors += 1;
@@ -107,6 +116,12 @@ impl BasicParserComponent {
 }
 
 impl SiemComponent for BasicParserComponent {
+    fn id(&self) -> u64 {
+        return self.id;
+    }
+    fn set_id(&mut self, id: u64) {
+        self.id = id;
+    }
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("BasicParser")
     }
@@ -120,6 +135,10 @@ impl SiemComponent for BasicParserComponent {
     fn set_kernel_sender(&mut self, sender: Sender<SiemMessage>) {
         self.kernel_sender = sender;
     }
+    fn duplicate(&self) -> Box<dyn SiemComponent> {
+        return Box::new(self.clone());
+    }
+    fn set_datasets(&mut self, _datasets: Vec<SiemDataset>) {}
 
     /// Execute the logic of this component in an infinite loop. Must be stopped using Commands sent using the channel.
     fn run(&mut self) {
@@ -127,11 +146,11 @@ impl SiemComponent for BasicParserComponent {
             let rcv_action = (&self.local_chnl_rcv).try_recv();
             match rcv_action {
                 Ok(msg) => match msg {
-                    SiemMessage::Command(cmd) => match cmd {
+                    SiemMessage::Command(id, cmd) => match cmd {
                         SiemFunctionCall::STOP_COMPONENT(_n) => return,
                         SiemFunctionCall::OTHER(name, _params) => {
                             if name == "LIST_PARSERS" {
-                                let _r = self.kernel_sender.send(self.list_parsers());
+                                let _r = self.kernel_sender.send(self.list_parsers(id));
                             }
                         }
                         _ => {}
@@ -166,8 +185,10 @@ impl SiemComponent for BasicParserComponent {
                 match log {
                     Some(log) => {
                         self.parse_log(log);
-                    },
-                    None => {break;}
+                    }
+                    None => {
+                        break;
+                    }
                 }
             }
         }
@@ -210,6 +231,7 @@ impl SiemComponent for BasicParserComponent {
             Cow::Borrowed(""), // No HTML
             datasets,
             commands,
+            vec![],
         )
     }
 }
@@ -218,11 +240,21 @@ impl SiemComponent for BasicParserComponent {
 mod parser_test {
     use super::BasicParserComponent;
     use std::borrow::Cow;
-    use usiem::components::common::{LogParser, LogParsingError, SiemFunctionCall, SiemMessage, SiemFunctionResponse};
+    use usiem::components::common::{
+        LogParser, LogParsingError, SiemFunctionCall, SiemFunctionResponse, SiemMessage,
+    };
     use usiem::components::SiemComponent;
     use usiem::events::field::{SiemField, SiemIp};
+    use usiem::events::schema::FieldSchema;
     use usiem::events::SiemLog;
 
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref BASIC_SCHEMA: FieldSchema = FieldSchema::new();
+    }
+
+    #[derive(Clone)]
     struct DummyParserTextDUMMY {}
 
     impl LogParser for DummyParserTextDUMMY {
@@ -234,10 +266,16 @@ mod parser_test {
             log.message().contains("DUMMY")
         }
         fn name(&self) -> &str {
+            "DummyParserTextDUMMY"
+        }
+        fn description(&self) -> &str {
             "This is a dummy that parsers if contains DUMMY in text"
         }
+        fn schema(&self) -> &'static FieldSchema {
+            return &BASIC_SCHEMA;
+        }
     }
-
+    #[derive(Clone)]
     struct DummyParserALL {}
 
     impl LogParser for DummyParserALL {
@@ -249,7 +287,13 @@ mod parser_test {
             true
         }
         fn name(&self) -> &str {
+            "DummyParserALL"
+        }
+        fn description(&self) -> &str {
             "This is a dummy parser that always parses logs"
+        }
+        fn schema(&self) -> &'static FieldSchema {
+            return &BASIC_SCHEMA;
         }
     }
 
@@ -284,6 +328,7 @@ mod parser_test {
             std::thread::sleep(std::time::Duration::from_millis(200));
             // STOP parser component to finish testing
             let _r = component_channel.send(SiemMessage::Command(
+                0,
                 SiemFunctionCall::STOP_COMPONENT(Cow::Borrowed("BasicParserComponent")),
             ));
         });
@@ -330,11 +375,13 @@ mod parser_test {
 
         std::thread::spawn(move || {
             let _r = component_channel.send(SiemMessage::Command(
-                SiemFunctionCall::OTHER(Cow::Borrowed("LIST_PARSERS"),serde_json::json!("{}")),
+                0,
+                SiemFunctionCall::OTHER(Cow::Borrowed("LIST_PARSERS"), serde_json::json!("{}")),
             ));
             std::thread::sleep(std::time::Duration::from_millis(200));
             // STOP parser component to finish testing
             let _r = component_channel.send(SiemMessage::Command(
+                0,
                 SiemFunctionCall::STOP_COMPONENT(Cow::Borrowed("BasicParserComponent")),
             ));
         });
@@ -342,29 +389,32 @@ mod parser_test {
 
         let response = kernel_receiver.recv();
         match response {
-            Ok(response) => {
-                match response {
-                    SiemMessage::Response(response) => {
-                        match response {
-                            SiemFunctionResponse::OTHER(name, params) => {
-                                if name != "LIST_PARSERS" {
-                                    panic!("Must be LIST_PARSERS response")
-                                }
-                                match params{
-                                    Ok(response) => {
-                                        assert_eq!(response.contains("This is a dummy that parsers if contains DUMMY in text"), true);
-                                        assert_eq!(response.contains("This is a dummy parser that always parses logs"), true);
-                                    },
-                                    _ => {panic!("Must not be error")}
-                                }
-
-                            },
-                            _ => {panic!("Must be OTHER")}
+            Ok(response) => match response {
+                SiemMessage::Response(_i, response) => match response {
+                    SiemFunctionResponse::OTHER(name, params) => {
+                        if name != "LIST_PARSERS" {
+                            panic!("Must be LIST_PARSERS response")
                         }
-                    },
-                    _ => {panic!("Must be response")}
+                        match params {
+                            Ok(response) => {
+                                println!("{}", response);
+                                let response = response.to_string();
+                                assert_eq!(response.contains("DummyParserTextDUMMY"), true);
+                                assert_eq!(response.contains("DummyParserALL"), true);
+                            }
+                            _ => {
+                                panic!("Must not be error")
+                            }
+                        }
+                    }
+                    _ => {
+                        panic!("Must be OTHER")
+                    }
+                },
+                _ => {
+                    panic!("Must be response")
                 }
-            }
+            },
             _ => {
                 panic!("Must be received")
             }
