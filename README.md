@@ -27,9 +27,6 @@ impl LogParser for DummyParserTextDUMMY {
         log.add_field("parser", SiemField::from_str("DummyParserTextDUMMY"));
         Ok(log)
     }
-    fn device_match(&self, log: &SiemLog) -> bool {
-        log.message().contains("DUMMY")
-    }
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DummyParserTextDUMMY")
     }

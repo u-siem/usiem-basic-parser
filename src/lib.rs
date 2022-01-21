@@ -4,7 +4,7 @@ use usiem::components::command::{
     CommandDefinition, SiemCommandCall, SiemCommandHeader, SiemCommandResponse, SiemFunctionType,
 };
 use usiem::components::command_types::ParserDefinition;
-use usiem::components::common::{LogParser, LogParsingError};
+use usiem::components::parsing::{LogParser, LogParsingError};
 use usiem::components::common::{
     SiemComponentCapabilities, SiemComponentStateStorage, SiemMessage, UserRole,
 };
@@ -270,7 +270,8 @@ impl SiemComponent for BasicParserComponent {
 mod parser_test {
     use super::BasicParserComponent;
     use usiem::components::command::{SiemCommandHeader, SiemCommandCall, SiemCommandResponse};
-    use usiem::components::common::{LogGenerator, LogParser, LogParsingError, SiemMessage};
+    use usiem::components::common::{ SiemMessage};
+    use usiem::components::parsing::{LogGenerator, LogParser, LogParsingError};
     use usiem::components::SiemComponent;
     use usiem::events::field::{SiemField};
     use usiem::events::schema::FieldSchema;
@@ -305,9 +306,6 @@ mod parser_test {
             log.add_field("parser", SiemField::from_str("DummyParserTextDUMMY"));
             Ok(log)
         }
-        fn device_match(&self, log: &SiemLog) -> bool {
-            log.message().contains("DUMMY")
-        }
         fn name(&self) -> &str {
             "DummyParserTextDUMMY"
         }
@@ -329,9 +327,6 @@ mod parser_test {
         fn parse_log(&self, mut log: SiemLog) -> Result<SiemLog, LogParsingError> {
             log.add_field("parser", SiemField::from_str("DummyParserALL"));
             Ok(log)
-        }
-        fn device_match(&self, _log: &SiemLog) -> bool {
-            true
         }
         fn name(&self) -> &str {
             "DummyParserALL"
@@ -385,29 +380,21 @@ mod parser_test {
         });
         parser.run();
 
-        let log1 = next_log_receiver.recv();
-        match log1 {
-            Ok(log) => {
-                assert_eq!(
-                    log.field("parser"),
-                    Some(&SiemField::from_str("DummyParserTextDUMMY"))
-                );
-            }
-            _ => {
-                panic!("Must be received")
-            }
+        if let Ok(log) =  next_log_receiver.recv() {
+            assert_eq!(
+                log.field("parser"),
+                Some(&SiemField::from_str("DummyParserTextDUMMY"))
+            );
+        }else{
+            panic!("Must be received")
         }
-        let log2 = next_log_receiver.recv();
-        match log2 {
-            Ok(log) => {
-                assert_eq!(
-                    log.field("parser"),
-                    Some(&SiemField::from_str("DummyParserALL"))
-                );
-            }
-            _ => {
-                panic!("Must be received")
-            }
+        if let Ok(log) =  next_log_receiver.recv() {
+            assert_eq!(
+                log.field("parser"),
+                Some(&SiemField::from_str("DummyParserALL"))
+            );
+        }else{
+            panic!("Must be received")
         }
     }
 
