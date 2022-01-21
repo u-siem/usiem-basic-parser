@@ -1,6 +1,6 @@
 [package]
 name = "usiem-basic-parser"
-version = "0.0.4"
+version = "0.0.5"
 authors = ["Samuel Garcés <samuel.garces@protonmail.com>"]
 license = "MIT"
 description = "uSIEM parser component that allows using multiple and different parsers"
@@ -14,10 +14,7 @@ name = "usiem_basic_parser"
 path = "src/lib.rs"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-u-siem = {version = "^0.0.70"}
-crossbeam-channel = { version = "0.5" }
+u-siem = "0.0"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
