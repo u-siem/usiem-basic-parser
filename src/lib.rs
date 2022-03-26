@@ -75,7 +75,8 @@ impl BasicParserComponent {
         log: SiemLog,
     ) {
         let mut empty = vec![];
-        let selected_parsers = match origin_parser_map.get_mut(log.origin()) {
+        let origin : String = log.origin().to_string();
+        let selected_parsers = match origin_parser_map.get_mut(&origin) {
             Some(vc) => vc,
             None => &mut empty,
         };
@@ -118,14 +119,23 @@ impl BasicParserComponent {
             if !tried_parsers.contains(parser.name()) {
                 log = match parser.parse_log(log) {
                     Ok(lg) => {
-                        selected_parsers.push(parser);
+
+                        if !origin_parser_map.contains_key(&origin) {
+                            origin_parser_map.insert(origin.clone(), vec![&parser]);
+                        }else{
+                            let _ : Option<String> = origin_parser_map.get_mut(&origin).and_then(|x| {x.push(&parser); None});
+                        }
                         let _ = self.log_sender.send(lg);
                         return;
                     }
                     Err(e) => match e {
                         LogParsingError::NoValidParser(lg) => lg,
                         LogParsingError::ParserError(lg, error) => {
-                            selected_parsers.push(parser);
+                            if !origin_parser_map.contains_key(&origin) {
+                                origin_parser_map.insert(origin.clone(), vec![&parser]);
+                            }else{
+                                let _ : Option<String> = origin_parser_map.get_mut(&origin).and_then(|x| {x.push(&parser); None});
+                            }
                             let r = self
                                 .kernel_sender
                                 .send(SiemMessage::Notification(self.id, Cow::Owned(error)));
@@ -137,12 +147,20 @@ impl BasicParserComponent {
                             return;
                         }
                         LogParsingError::NotImplemented(lg) => {
-                            selected_parsers.push(parser);
+                            if !origin_parser_map.contains_key(&origin) {
+                                origin_parser_map.insert(origin.clone(), vec![&parser]);
+                            }else{
+                                let _ : Option<String> = origin_parser_map.get_mut(&origin).and_then(|x| {x.push(&parser); None});
+                            }
                             let _ = self.log_sender.send(lg);
                             return;
                         }
                         LogParsingError::FormatError(lg, _error) => {
-                            selected_parsers.push(parser);
+                            if !origin_parser_map.contains_key(&origin) {
+                                origin_parser_map.insert(origin.clone(), vec![&parser]);
+                            }else{
+                                let _ : Option<String> = origin_parser_map.get_mut(&origin).and_then(|x| {x.push(&parser); None});
+                            }
                             let _ = self.log_sender.send(lg);
                             return;
                         }
@@ -189,8 +207,8 @@ impl SiemComponent for BasicParserComponent {
             match rcv_action {
                 Ok(msg) => match msg {
                     SiemMessage::Command(hdr, cmd) => match cmd {
-                        SiemCommandCall::STOP_COMPONENT(_n) => return,
-                        SiemCommandCall::LIST_PARSERS(_, _) => {
+                        SiemCommandCall::STOP_COMPONENT(_name) => return,
+                        SiemCommandCall::LIST_PARSERS(_pagination) => {
                             let _ = kernel_channel.send(self.list_parsers(&hdr));
                         }
                         _ => {}
@@ -269,7 +287,7 @@ impl SiemComponent for BasicParserComponent {
 #[cfg(test)]
 mod parser_test {
     use super::BasicParserComponent;
-    use usiem::components::command::{SiemCommandHeader, SiemCommandCall, SiemCommandResponse};
+    use usiem::components::command::{SiemCommandHeader, SiemCommandCall, SiemCommandResponse, Pagination};
     use usiem::components::common::{ SiemMessage};
     use usiem::components::parsing::{LogGenerator, LogParser, LogParsingError};
     use usiem::components::SiemComponent;
@@ -414,7 +432,10 @@ mod parser_test {
         std::thread::spawn(move || {
             let _r = component_channel.send(SiemMessage::Command(
                 SiemCommandHeader {comm_id : 0, comp_id : 0, user : "Superuser".to_string()},
-                SiemCommandCall::LIST_PARSERS(0,1000)
+                SiemCommandCall::LIST_PARSERS(Pagination {
+                    offset : 0,
+                    limit : 1000
+                })
             ));
             std::thread::sleep(std::time::Duration::from_millis(200));
             // STOP parser component to finish testing
