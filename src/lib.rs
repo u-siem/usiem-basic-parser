@@ -4,11 +4,11 @@ use usiem::components::command::{
     CommandDefinition, SiemCommandCall, SiemCommandHeader, SiemCommandResponse, SiemFunctionType,
 };
 use usiem::components::command_types::ParserDefinition;
+use usiem::components::dataset::holder::DatasetHolder;
 use usiem::components::parsing::{LogParser, LogParsingError};
 use usiem::components::common::{
     SiemComponentCapabilities, SiemComponentStateStorage, SiemMessage, UserRole,
 };
-use usiem::components::dataset::SiemDataset;
 use usiem::components::SiemComponent;
 use usiem::crossbeam_channel::TryRecvError;
 use usiem::crossbeam_channel::{Receiver, Sender};
@@ -27,6 +27,7 @@ pub struct BasicParserComponent {
     log_sender: Sender<SiemLog>,
     conn: Option<Box<dyn SiemComponentStateStorage>>,
     parsers: Vec<Box<dyn LogParser>>,
+    datasets : DatasetHolder,
     id: u64,
 }
 
@@ -43,6 +44,7 @@ impl BasicParserComponent {
             log_sender,
             parsers: Vec::new(),
             conn: None,
+            datasets : DatasetHolder::from_datasets(vec![]),
             id: 0,
         };
     }
@@ -84,7 +86,7 @@ impl BasicParserComponent {
         let mut log = log;
         // Direct search
         for parser in &(*selected_parsers) {
-            log = match parser.parse_log(log) {
+            log = match parser.parse_log(log, &self.datasets) {
                 Ok(lg) => {
                     let _ = self.log_sender.send(lg);
                     return;
@@ -117,7 +119,7 @@ impl BasicParserComponent {
         // No direct parser found, try indirect
         for parser in &self.parsers {
             if !tried_parsers.contains(parser.name()) {
-                log = match parser.parse_log(log) {
+                log = match parser.parse_log(log, &self.datasets) {
                     Ok(lg) => {
 
                         if !origin_parser_map.contains_key(&origin) {
@@ -195,7 +197,9 @@ impl SiemComponent for BasicParserComponent {
     fn duplicate(&self) -> Box<dyn SiemComponent> {
         return Box::new(self.clone());
     }
-    fn set_datasets(&mut self, _datasets: Vec<SiemDataset>) {}
+    fn set_datasets(&mut self, datasets: DatasetHolder) {
+        self.datasets = datasets;
+    }
 
     /// Execute the logic of this component in an infinite loop. Must be stopped using Commands sent using the channel.
     fn run(&mut self) {
@@ -289,6 +293,7 @@ mod parser_test {
     use super::BasicParserComponent;
     use usiem::components::command::{SiemCommandHeader, SiemCommandCall, SiemCommandResponse, Pagination};
     use usiem::components::common::{ SiemMessage};
+    use usiem::components::dataset::holder::DatasetHolder;
     use usiem::components::parsing::{LogGenerator, LogParser, LogParsingError};
     use usiem::components::SiemComponent;
     use usiem::events::field::{SiemField};
@@ -317,7 +322,7 @@ mod parser_test {
     struct DummyParserTextDUMMY {}
 
     impl LogParser for DummyParserTextDUMMY {
-        fn parse_log(&self, mut log: SiemLog) -> Result<SiemLog, LogParsingError> {
+        fn parse_log(&self, mut log: SiemLog, _datasets : &DatasetHolder) -> Result<SiemLog, LogParsingError> {
             if !log.message().contains("DUMMY") {
                 return Err(LogParsingError::NoValidParser(log))
             }
@@ -342,7 +347,7 @@ mod parser_test {
     struct DummyParserALL {}
 
     impl LogParser for DummyParserALL {
-        fn parse_log(&self, mut log: SiemLog) -> Result<SiemLog, LogParsingError> {
+        fn parse_log(&self, mut log: SiemLog, _datasets : &DatasetHolder) -> Result<SiemLog, LogParsingError> {
             log.add_field("parser", SiemField::from_str("DummyParserALL"));
             Ok(log)
         }
