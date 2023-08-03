@@ -19,6 +19,16 @@ use usiem::send_message;
 
 mod metrics;
 
+/// Basic component parser
+/// 
+/// # Example
+/// ```ignore
+/// let mut parser_component = BasicParserComponent::new();
+/// parser_component.add_parser(Box::from(parser1));
+/// parser_component.add_parser(Box::from(parser2));
+/// 
+/// kernel.add_component(parser_component);
+/// ```
 #[derive(Clone)]
 pub struct BasicParserComponent {
     /// Receive actions from other components or the kernel
@@ -49,6 +59,7 @@ impl BasicParserComponent {
             metrics: generate_parser_metrics(&[]),
         };
     }
+    /// Adds a new parser in the component
     pub fn add_parser(&mut self, parser: Box<dyn LogParser>) {
         self.parsers.push(parser);
         self.metrics = generate_parser_metrics(&self.parsers);
