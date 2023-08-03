@@ -1,20 +1,23 @@
 [package]
 name = "usiem-basic-parser"
-version = "0.0.8"
+version = "0.1.0"
 authors = ["Samuel Garcés <samuel.garces@protonmail.com>"]
 license = "MIT"
 description = "uSIEM parser component that allows using multiple and different parsers"
 repository = "https://github.com/u-siem/usiem-basic-parser"
 keywords = ["SIEM", "security", "logs","parser"]
 categories = ["parsing"]
-edition = "2018"
+edition = "2021"
+
+[features]
+default = ["metrics"]
+metrics = []
+
 
 [lib]
 name = "usiem_basic_parser"
 path = "src/lib.rs"
 
 [dependencies]
-u-siem = "0.0"
-
-[dev-dependencies]
-lazy_static = "1.4.0"
+u-siem = { version = "0"}
+#u-siem = {path = "../u-siem-core"}
